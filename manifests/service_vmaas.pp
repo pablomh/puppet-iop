@@ -30,7 +30,9 @@ class iop::service_vmaas (
   include podman
   include iop::core_network
   include iop::core_kafka
+  include iop::core_gateway
   include iop::database
+  include iop::cvemap_downloader
   include certs::iop
 
   $service_name = 'iop-service-vmaas-reposcan'

@@ -20,6 +20,11 @@ describe 'iop::cvemap_downloader' do
     it_behaves_like 'an idempotent resource' do
       let(:manifest) do
         <<-PUPPET
+        group { 'foreman': } ->
+        file { '/etc/foreman':
+          ensure => directory,
+        } ->
+        class { 'certs::foreman': } ->
         class { 'iop::cvemap_downloader': }
         PUPPET
       end
@@ -59,6 +64,12 @@ describe 'iop::cvemap_downloader' do
 
     describe command('systemctl list-timers iop-cvemap-download.timer') do
       its(:exit_status) { should eq 0 }
+    end
+
+    describe file('/var/www/html/pub/iop/data/meta/v1/cvemap.xml') do
+      it { should exist }
+      it { should be_file }
+      it { should be_readable }
     end
   end
 end

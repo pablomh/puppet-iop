@@ -14,6 +14,7 @@ fi
 OUTPUT_DIR=$(dirname "$OUTPUT_FILE")
 MANUAL_FILE="/var/lib/foreman/cvemap.xml"
 CHECKSUM_FILE="${OUTPUT_FILE}.checksum"
+FILE_UPDATED=false
 
 mkdir -p "$OUTPUT_DIR"
 
@@ -31,6 +32,7 @@ if [[ -f "$MANUAL_FILE" ]]; then
         echo "Copying updated manual file"
         cp "$MANUAL_FILE" "$OUTPUT_FILE" && echo "$CURRENT_CHECKSUM" > "$CHECKSUM_FILE"
         chmod 644 "$OUTPUT_FILE"
+        FILE_UPDATED=true
     else
         echo "Manual file unchanged, skipping"
     fi
@@ -61,6 +63,7 @@ else
 
         mv "$TEMP_FILE" "$OUTPUT_FILE"
         chmod 644 "$OUTPUT_FILE"
+        FILE_UPDATED=true
     else
         echo "Error: Failed to download from $URL" >&2
         exit 1
@@ -68,3 +71,49 @@ else
 fi
 
 echo "Update check completed successfully"
+
+# Function to trigger reposync with retry logic using SSL certificates
+trigger_reposync() {
+    echo "CVE map file was updated, triggering reposync via SSL API"
+    
+    local max_attempts=5
+    local attempt=1
+    local delay=2
+    
+    while [[ $attempt -le $max_attempts ]]; do
+        echo "Attempt $attempt/$max_attempts to trigger reposync"
+        
+        if curl \
+            --cert /etc/foreman/client_cert.pem \
+            --key /etc/foreman/client_key.pem \
+            --cacert /etc/foreman/proxy_ca.pem \
+            --silent \
+            --fail \
+            --connect-timeout 10 \
+            --max-time 30 \
+            --request PUT \
+            "https://localhost:24443/api/vmaas-reposcan/v1/sync"; then
+            echo "Successfully triggered reposync"
+            return 0
+        else
+            echo "Failed to trigger reposync (attempt $attempt/$max_attempts)"
+            if [[ $attempt -lt $max_attempts ]]; then
+                echo "Waiting ${delay}s before retry..."
+                sleep $delay
+                delay=$((delay * 2))
+            else
+                echo "Warning: Failed to trigger reposync after $max_attempts attempts"
+                return 1
+            fi
+        fi
+        
+        ((attempt++))
+    done
+}
+
+# Trigger reposync if the file was updated
+if [[ "$FILE_UPDATED" == "true" ]]; then
+    trigger_reposync
+else
+    echo "CVE map file unchanged, skipping reposync trigger"
+fi
